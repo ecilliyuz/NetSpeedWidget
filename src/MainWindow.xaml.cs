@@ -8,6 +8,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Microsoft.Win32;
 using Forms = System.Windows.Forms;
 using WpfCursors = System.Windows.Input.Cursors;
 
@@ -19,11 +20,20 @@ namespace NetSpeedWidget
         private const int WS_EX_TOOLWINDOW = 0x00000080;
         private const int WS_EX_NOACTIVATE = 0x08000000;
 
+        private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+        private const uint SWP_NOSIZE = 0x0001;
+        private const uint SWP_NOMOVE = 0x0002;
+        private const uint SWP_NOACTIVATE = 0x0010;
+        private const uint SWP_SHOWWINDOW = 0x0040;
+
         [DllImport("user32.dll", SetLastError = true)]
         private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 
         private readonly AppSettings _settings;
         private readonly NetworkMonitor _networkMonitor;
@@ -53,6 +63,7 @@ namespace NetSpeedWidget
             SourceInitialized += MainWindow_SourceInitialized;
             LocationChanged += MainWindow_LocationChanged;
             MouseDown += MainWindow_MouseDown;
+            Deactivated += (s, e) => EnsureTopmost();
         }
 
         private void MainWindow_SourceInitialized(object? sender, EventArgs e)
@@ -79,6 +90,32 @@ namespace NetSpeedWidget
             _networkMonitor.SpeedUpdated += NetworkMonitor_SpeedUpdated;
             _networkMonitor.Start();
             _timer.Start();
+
+            SystemEvents.DisplaySettingsChanged += SystemEvents_DisplaySettingsChanged;
+            EnsureTopmost();
+        }
+
+        private void SystemEvents_DisplaySettingsChanged(object? sender, EventArgs e)
+        {
+            Dispatcher.InvokeAsync(() =>
+            {
+                EnsureWithinScreenBounds();
+                EnsureTopmost();
+            });
+        }
+
+        public void EnsureTopmost()
+        {
+            try
+            {
+                var helper = new WindowInteropHelper(this);
+                if (helper.Handle != IntPtr.Zero)
+                {
+                    SetWindowPos(helper.Handle, HWND_TOPMOST, 0, 0, 0, 0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+                }
+            }
+            catch { }
         }
 
         private void InitNotifyIcon()
@@ -111,14 +148,15 @@ namespace NetSpeedWidget
                 {
                     Dispatcher.Invoke(() =>
                     {
-                        if (Visibility == Visibility.Visible)
+                        if (WindowState == WindowState.Minimized)
                         {
-                            Activate();
+                            WindowState = WindowState.Normal;
                         }
-                        else
-                        {
-                            Visibility = Visibility.Visible;
-                        }
+
+                        Visibility = Visibility.Visible;
+                        EnsureWithinScreenBounds();
+                        EnsureTopmost();
+                        Activate();
                     });
                 }
                 else if (e.Button == Forms.MouseButtons.Right)
@@ -257,12 +295,20 @@ namespace NetSpeedWidget
             _settings.WindowLeft = Left;
             _settings.WindowTop = Top;
             _settings.Save();
+
+            EnsureTopmost();
         }
 
         private void EnsureWithinScreenBounds()
         {
             double screenWidth = SystemParameters.PrimaryScreenWidth;
             double screenHeight = SystemParameters.PrimaryScreenHeight;
+
+            if (double.IsNaN(_settings.WindowLeft) || _settings.WindowLeft < 0 || _settings.WindowLeft > screenWidth - 20)
+            {
+                SnapToClock();
+                return;
+            }
 
             Left = Math.Max(0, Math.Min(_settings.WindowLeft, screenWidth - Width));
             Top = Math.Max(0, Math.Min(_settings.WindowTop, screenHeight - Height));
@@ -274,6 +320,32 @@ namespace NetSpeedWidget
 
             Dispatcher.InvokeAsync(() =>
             {
+                // Fullscreen check: hide while video is fullscreen, restore as soon as exited!
+                bool isFullScreen = FullScreenHelper.IsForegroundWindowFullScreen();
+
+                if (isFullScreen)
+                {
+                    if (Visibility != Visibility.Collapsed)
+                    {
+                        Visibility = Visibility.Collapsed;
+                    }
+                }
+                else
+                {
+                    if (Visibility != Visibility.Visible)
+                    {
+                        Visibility = Visibility.Visible;
+                    }
+
+                    if (WindowState == WindowState.Minimized)
+                    {
+                        WindowState = WindowState.Normal;
+                    }
+
+                    // Keep widget strictly on top of Taskbar
+                    EnsureTopmost();
+                }
+
                 TxtDownload.Text = e.DownloadFormatted;
                 TxtUpload.Text = e.UploadFormatted;
 
@@ -308,11 +380,15 @@ namespace NetSpeedWidget
 
         private void MainWindow_LocationChanged(object? sender, EventArgs e)
         {
-            if (IsLoaded)
+            if (IsLoaded && WindowState == WindowState.Normal)
             {
-                _settings.WindowLeft = Left;
-                _settings.WindowTop = Top;
-                _settings.Save();
+                // Only save valid on-screen coordinates
+                if (Left >= 0 && Top >= 0 && !double.IsNaN(Left) && !double.IsNaN(Top))
+                {
+                    _settings.WindowLeft = Left;
+                    _settings.WindowTop = Top;
+                    _settings.Save();
+                }
             }
         }
 
@@ -394,6 +470,7 @@ namespace NetSpeedWidget
 
         private void MenuExit_Click(object sender, RoutedEventArgs e)
         {
+            SystemEvents.DisplaySettingsChanged -= SystemEvents_DisplaySettingsChanged;
             if (_notifyIcon != null)
             {
                 _notifyIcon.Visible = false;
@@ -405,6 +482,7 @@ namespace NetSpeedWidget
 
         protected override void OnClosed(EventArgs e)
         {
+            SystemEvents.DisplaySettingsChanged -= SystemEvents_DisplaySettingsChanged;
             if (_notifyIcon != null)
             {
                 _notifyIcon.Visible = false;
