@@ -1,0 +1,141 @@
+<Window x:Class="NetSpeedWidget.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="NetSpeed"
+        Width="112" Height="36"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ResizeMode="NoResize"
+        ShowActivated="False"
+        Focusable="False">
+
+    <Border x:Name="RootBorder"
+            Background="#D6181920"
+            BorderBrush="#25FFFFFF"
+            BorderThickness="1"
+            CornerRadius="6"
+            Padding="6,2"
+            Cursor="SizeAll">
+
+        <Border.ContextMenu>
+            <ContextMenu x:Name="WidgetContextMenu"
+                         Background="#F21E1E26" 
+                         BorderBrush="#40FFFFFF" 
+                         BorderThickness="1"
+                         Foreground="#F1F5F9"
+                         FontSize="12">
+                <ContextMenu.Resources>
+                    <Style TargetType="MenuItem">
+                        <Setter Property="Foreground" Value="#F1F5F9"/>
+                        <Setter Property="Padding" Value="8,4"/>
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Style.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter Property="Background" Value="#30FFFFFF"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                    <Style TargetType="Separator">
+                        <Setter Property="Background" Value="#30FFFFFF"/>
+                        <Setter Property="Margin" Value="4,3"/>
+                    </Style>
+                </ContextMenu.Resources>
+
+                <MenuItem x:Name="MenuLockPosition" Header="🔒  Konumu Kilitle" IsCheckable="True" Click="MenuLockPosition_Click"/>
+                <MenuItem Header="⏱️  Saatin Yanına Hizala" Click="MenuSnapToClock_Click"/>
+                <Separator/>
+                <MenuItem Header="🎨  Görünüm">
+                    <MenuItem x:Name="MenuThemeDark" Header="Yarı Saydam Koyu (Varsayılan)" Click="MenuTheme_Click" Tag="dark"/>
+                    <MenuItem x:Name="MenuThemeTransparent" Header="Tam Şeffaf (Yalnızca Yazılar)" Click="MenuTheme_Click" Tag="transparent"/>
+                    <MenuItem x:Name="MenuThemeLight" Header="Açık Tema" Click="MenuTheme_Click" Tag="light"/>
+                    <Separator/>
+                    <MenuItem x:Name="MenuCompactMode" Header="Tek Satır / Kompakt Mod" IsCheckable="True" Click="MenuCompactMode_Click"/>
+                </MenuItem>
+                <MenuItem Header="⚡  Hız Birimi">
+                    <MenuItem x:Name="MenuUnitAuto" Header="Otomatik (B/s, KB/s, MB/s)" Click="MenuUnit_Click" Tag="auto"/>
+                    <MenuItem x:Name="MenuUnitKb" Header="Sabit KB/s" Click="MenuUnit_Click" Tag="kb"/>
+                    <MenuItem x:Name="MenuUnitMb" Header="Sabit MB/s" Click="MenuUnit_Click" Tag="mb"/>
+                </MenuItem>
+                <MenuItem Header="⏱️  Yenileme Aralığı">
+                    <MenuItem x:Name="MenuIntervalFast" Header="0.5 Saniye (Hızlı)" Click="MenuInterval_Click" Tag="0.5"/>
+                    <MenuItem x:Name="MenuIntervalNormal" Header="1.0 Saniye (Varsayılan)" Click="MenuInterval_Click" Tag="1.0"/>
+                    <MenuItem x:Name="MenuIntervalSlow" Header="2.0 Saniye (Tasarruf)" Click="MenuInterval_Click" Tag="2.0"/>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="🌐  Ağ İstatistikleri &amp; Detaylar..." Click="MenuStats_Click"/>
+                <MenuItem x:Name="MenuStartup" Header="🚀  Windows ile Otomatik Başlat" IsCheckable="True" Click="MenuStartup_Click"/>
+                <Separator/>
+                <MenuItem Header="❌  Kapat" Click="MenuExit_Click"/>
+            </ContextMenu>
+        </Border.ContextMenu>
+
+        <Grid VerticalAlignment="Center">
+            <!-- 2-Row Layout (Default) -->
+            <Grid x:Name="GridTwoRows" VerticalAlignment="Center">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Download Row -->
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="ArrowDown" 
+                               Text="↓" 
+                               Foreground="#22C55E" 
+                               FontWeight="Bold" 
+                               FontSize="11" 
+                               Margin="0,0,4,0" 
+                               VerticalAlignment="Center"/>
+                    <TextBlock x:Name="TxtDownload" 
+                               Grid.Column="1" 
+                               Text="0.0 KB/s" 
+                               Foreground="#F8FAFC" 
+                               FontSize="10" 
+                               FontWeight="SemiBold" 
+                               FontFamily="Consolas, Segoe UI Variable Display, Segoe UI"
+                               HorizontalAlignment="Right" 
+                               VerticalAlignment="Center"/>
+                </Grid>
+
+                <!-- Upload Row -->
+                <Grid Grid.Row="1" Margin="0,1,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="ArrowUp" 
+                               Text="↑" 
+                               Foreground="#38BDF8" 
+                               FontWeight="Bold" 
+                               FontSize="11" 
+                               Margin="0,0,4,0" 
+                               VerticalAlignment="Center"/>
+                    <TextBlock x:Name="TxtUpload" 
+                               Grid.Column="1" 
+                               Text="0.0 KB/s" 
+                               Foreground="#F8FAFC" 
+                               FontSize="10" 
+                               FontWeight="SemiBold" 
+                               FontFamily="Consolas, Segoe UI Variable Display, Segoe UI"
+                               HorizontalAlignment="Right" 
+                               VerticalAlignment="Center"/>
+                </Grid>
+            </Grid>
+
+            <!-- 1-Row Compact Layout -->
+            <StackPanel x:Name="StackOneRow" Orientation="Horizontal" Visibility="Collapsed" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock Text="↓" Foreground="#22C55E" FontWeight="Bold" FontSize="11" Margin="0,0,2,0"/>
+                <TextBlock x:Name="TxtDownloadCompact" Text="0K" Foreground="#F8FAFC" FontSize="10" FontWeight="SemiBold" FontFamily="Consolas, Segoe UI" Margin="0,0,6,0"/>
+                <TextBlock Text="↑" Foreground="#38BDF8" FontWeight="Bold" FontSize="11" Margin="0,0,2,0"/>
+                <TextBlock x:Name="TxtUploadCompact" Text="0K" Foreground="#F8FAFC" FontSize="10" FontWeight="SemiBold" FontFamily="Consolas, Segoe UI"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

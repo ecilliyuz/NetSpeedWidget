@@ -1,0 +1,20 @@
+## Visual Studio / .NET build artifacts
+src/bin/
+src/obj/
+[Bb]in/
+[Oo]bj/
+!publish/
+
+## Visual Studio Cache & User files
+.vs/
+*.user
+*.suo
+*.userosvmat
+*.sln.docstates
+
+## Temporary & Log files
+*.log
+*.tmp
+debug.log
+test_run.ps1
+generate_ico.ps1
