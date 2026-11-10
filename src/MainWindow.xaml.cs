@@ -41,12 +41,31 @@ namespace NetSpeedWidget
         private Forms.NotifyIcon? _notifyIcon;
         private StatsWindow? _statsWindow;
         private NetworkSpeedEventArgs? _lastArgs;
+        private bool _isFullyInitialized = false;
 
         public MainWindow()
         {
             InitializeComponent();
 
             _settings = AppSettings.Load();
+
+            // Set startup location and coordinates immediately in constructor
+            WindowStartupLocation = WindowStartupLocation.Manual;
+            if (_settings.WindowLeft >= 0 && _settings.WindowTop >= 0)
+            {
+                Left = _settings.WindowLeft;
+                Top = _settings.WindowTop;
+            }
+            else
+            {
+                CalculateClockPosition(out double defaultLeft, out double defaultTop);
+                Left = defaultLeft;
+                Top = defaultTop;
+                _settings.WindowLeft = defaultLeft;
+                _settings.WindowTop = defaultTop;
+                _settings.Save();
+            }
+
             _networkMonitor = new NetworkMonitor
             {
                 SpeedUnit = _settings.SpeedUnit,
@@ -78,14 +97,8 @@ namespace NetSpeedWidget
             InitNotifyIcon();
             ApplySettings();
 
-            if (_settings.WindowLeft < 0 || _settings.WindowTop < 0)
-            {
-                SnapToClock();
-            }
-            else
-            {
-                EnsureWithinScreenBounds();
-            }
+            // Check if saved coordinates are on a connected monitor, otherwise snap
+            EnsureWithinScreenBounds();
 
             _networkMonitor.SpeedUpdated += NetworkMonitor_SpeedUpdated;
             _networkMonitor.Start();
@@ -93,6 +106,9 @@ namespace NetSpeedWidget
 
             SystemEvents.DisplaySettingsChanged += SystemEvents_DisplaySettingsChanged;
             EnsureTopmost();
+
+            // Initialization completed - enable position saving
+            _isFullyInitialized = true;
         }
 
         private void SystemEvents_DisplaySettingsChanged(object? sender, EventArgs e)
@@ -199,13 +215,13 @@ namespace NetSpeedWidget
 
             // Compact mode
             MenuCompactMode.IsChecked = _settings.CompactMode;
-            SetCompactMode(_settings.CompactMode);
+            SetCompactModeInternal(_settings.CompactMode);
 
             // Theme
-            ApplyTheme(_settings.Theme);
+            ApplyThemeInternal(_settings.Theme);
         }
 
-        private void ApplyTheme(string theme)
+        private void ApplyThemeInternal(string theme)
         {
             _settings.Theme = theme;
             MenuThemeDark.IsChecked = theme == "dark";
@@ -246,11 +262,9 @@ namespace NetSpeedWidget
                     TxtUploadCompact.Foreground = (System.Windows.Media.Brush)converter.ConvertFromString("#F8FAFC")!;
                     break;
             }
-
-            _settings.Save();
         }
 
-        private void SetCompactMode(bool compact)
+        private void SetCompactModeInternal(bool compact)
         {
             _settings.CompactMode = compact;
             if (compact)
@@ -267,10 +281,9 @@ namespace NetSpeedWidget
                 Height = 36;
                 Width = 112;
             }
-            _settings.Save();
         }
 
-        public void SnapToClock()
+        public void CalculateClockPosition(out double clockLeft, out double clockTop)
         {
             double screenWidth = SystemParameters.PrimaryScreenWidth;
             double screenHeight = SystemParameters.PrimaryScreenHeight;
@@ -281,37 +294,70 @@ namespace NetSpeedWidget
             double targetHeight = Height > 0 ? Height : 36;
 
             // In Windows 11, taskbar notification icons & clock occupy ~220-280px on the right
-            Left = screenWidth - 275 - targetWidth;
+            clockLeft = screenWidth - 275 - targetWidth;
 
             if (taskbarHeight > 10)
             {
-                Top = screenHeight - taskbarHeight + ((taskbarHeight - targetHeight) / 2.0);
+                clockTop = screenHeight - taskbarHeight + ((taskbarHeight - targetHeight) / 2.0);
             }
             else
             {
-                Top = screenHeight - targetHeight - 6;
+                clockTop = screenHeight - targetHeight - 6;
             }
+        }
 
-            _settings.WindowLeft = Left;
-            _settings.WindowTop = Top;
-            _settings.Save();
+        public void SnapToClock()
+        {
+            CalculateClockPosition(out double clockLeft, out double clockTop);
+            Left = clockLeft;
+            Top = clockTop;
 
+            SavePosition();
             EnsureTopmost();
         }
 
         private void EnsureWithinScreenBounds()
         {
-            double screenWidth = SystemParameters.PrimaryScreenWidth;
-            double screenHeight = SystemParameters.PrimaryScreenHeight;
+            double virtualLeft = SystemParameters.VirtualScreenLeft;
+            double virtualTop = SystemParameters.VirtualScreenTop;
+            double virtualWidth = SystemParameters.VirtualScreenWidth;
+            double virtualHeight = SystemParameters.VirtualScreenHeight;
 
-            if (double.IsNaN(_settings.WindowLeft) || _settings.WindowLeft < 0 || _settings.WindowLeft > screenWidth - 20)
+            double targetLeft = Left;
+            double targetTop = Top;
+
+            if (_settings.WindowLeft >= 0 && _settings.WindowTop >= 0)
+            {
+                targetLeft = _settings.WindowLeft;
+                targetTop = _settings.WindowTop;
+            }
+
+            // Check if coordinates are completely outside any connected screen
+            bool isOffScreen = double.IsNaN(targetLeft) || double.IsNaN(targetTop) ||
+                              targetLeft < virtualLeft - 10 || targetLeft > (virtualLeft + virtualWidth - 10) ||
+                              targetTop < virtualTop - 10 || targetTop > (virtualTop + virtualHeight - 10);
+
+            if (isOffScreen)
             {
                 SnapToClock();
                 return;
             }
 
-            Left = Math.Max(0, Math.Min(_settings.WindowLeft, screenWidth - Width));
-            Top = Math.Max(0, Math.Min(_settings.WindowTop, screenHeight - Height));
+            Left = targetLeft;
+            Top = targetTop;
+        }
+
+        private void SavePosition()
+        {
+            if (!_isFullyInitialized || WindowState != WindowState.Normal)
+                return;
+
+            if (!double.IsNaN(Left) && !double.IsNaN(Top))
+            {
+                _settings.WindowLeft = Left;
+                _settings.WindowTop = Top;
+                _settings.Save();
+            }
         }
 
         private void NetworkMonitor_SpeedUpdated(object? sender, NetworkSpeedEventArgs e)
@@ -374,21 +420,16 @@ namespace NetSpeedWidget
                 else if (!_settings.IsLocked)
                 {
                     DragMove();
+                    SavePosition();
                 }
             }
         }
 
         private void MainWindow_LocationChanged(object? sender, EventArgs e)
         {
-            if (IsLoaded && WindowState == WindowState.Normal)
+            if (_isFullyInitialized && WindowState == WindowState.Normal)
             {
-                // Only save valid on-screen coordinates
-                if (Left >= 0 && Top >= 0 && !double.IsNaN(Left) && !double.IsNaN(Top))
-                {
-                    _settings.WindowLeft = Left;
-                    _settings.WindowTop = Top;
-                    _settings.Save();
-                }
+                SavePosition();
             }
         }
 
@@ -424,13 +465,15 @@ namespace NetSpeedWidget
         {
             if (sender is MenuItem item && item.Tag is string themeTag)
             {
-                ApplyTheme(themeTag);
+                ApplyThemeInternal(themeTag);
+                _settings.Save();
             }
         }
 
         private void MenuCompactMode_Click(object sender, RoutedEventArgs e)
         {
-            SetCompactMode(MenuCompactMode.IsChecked);
+            SetCompactModeInternal(MenuCompactMode.IsChecked);
+            _settings.Save();
         }
 
         private void MenuUnit_Click(object sender, RoutedEventArgs e)
@@ -470,6 +513,7 @@ namespace NetSpeedWidget
 
         private void MenuExit_Click(object sender, RoutedEventArgs e)
         {
+            SavePosition();
             SystemEvents.DisplaySettingsChanged -= SystemEvents_DisplaySettingsChanged;
             if (_notifyIcon != null)
             {
@@ -482,6 +526,7 @@ namespace NetSpeedWidget
 
         protected override void OnClosed(EventArgs e)
         {
+            SavePosition();
             SystemEvents.DisplaySettingsChanged -= SystemEvents_DisplaySettingsChanged;
             if (_notifyIcon != null)
             {

@@ -4,6 +4,7 @@
         Title="NetSpeed"
         Width="112" Height="36"
         WindowStyle="None"
+        WindowStartupLocation="Manual"
         AllowsTransparency="True"
         Background="Transparent"
         Topmost="True"
